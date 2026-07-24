@@ -10,6 +10,7 @@ Operation
 - Allows configured sensors to be enabled or disabled.
 - Allows COM ports to be selected or typed manually.
 - Allows an optional display-only nickname for each sensor.
+- Allows each sensor plot to use a linear or logarithmic y-axis.
 - Provides fixed acquisition-period options.
 - Allows selection of the persistent logging directory.
 - Save writes the changes to config.json and closes the window.
@@ -58,6 +59,12 @@ class ConfigurationWindow(QDialog):
         ("5 seconds", 5000),
     ]
 
+    # Display text and corresponding config.json value.
+    PLOT_SCALES = [
+        ("Linear", "linear"),
+        ("Logarithmic", "log"),
+    ]
+
     def __init__(self):
         super().__init__()
 
@@ -69,7 +76,7 @@ class ConfigurationWindow(QDialog):
         self.setWindowTitle(
             "OpenLabDAQ Configuration"
         )
-        self.resize(850, 600)
+        self.resize(1050, 600)
 
         main_layout = QVBoxLayout(self)
 
@@ -125,7 +132,7 @@ class ConfigurationWindow(QDialog):
 
     def create_sensor_section(self, main_layout):
         """
-        Create enable, COM-port, and nickname controls.
+        Create enable, COM-port, nickname, and plot-scale controls.
         """
 
         group_box = QGroupBox("Sensors")
@@ -142,12 +149,14 @@ class ConfigurationWindow(QDialog):
         enabled_header = QLabel("Enabled")
         port_header = QLabel("COM port")
         nickname_header = QLabel("GUI nickname")
+        plot_scale_header = QLabel("Plot scale")
 
         for header in (
             sensor_header,
             enabled_header,
             port_header,
             nickname_header,
+            plot_scale_header,
         ):
             header.setStyleSheet(
                 "font-weight: bold;"
@@ -172,6 +181,11 @@ class ConfigurationWindow(QDialog):
             nickname_header,
             0,
             3,
+        )
+        sensor_layout.addWidget(
+            plot_scale_header,
+            0,
+            4,
         )
 
         detected_ports = self.get_detected_ports()
@@ -261,6 +275,46 @@ class ConfigurationWindow(QDialog):
                 "History and CSV headers keep the official sensor name."
             )
 
+            plot_scale_selector = QComboBox()
+            plot_scale_selector.setMinimumWidth(145)
+            plot_scale_selector.setToolTip(
+                "Choose a linear y-axis or a logarithmic y-axis for this "
+                "sensor's plot. Logarithmic plots display only positive values."
+            )
+
+            for label, config_value in self.PLOT_SCALES:
+                plot_scale_selector.addItem(
+                    label,
+                    config_value,
+                )
+
+            saved_plot_scale = str(
+                settings.get(
+                    "plot_scale",
+                    "linear",
+                )
+                or "linear"
+            ).strip().lower()
+
+            plot_scale_index = (
+                plot_scale_selector.findData(
+                    saved_plot_scale
+                )
+            )
+
+            # Older configuration files do not contain plot_scale.
+            # Unsupported values safely fall back to linear.
+            if plot_scale_index == -1:
+                plot_scale_index = (
+                    plot_scale_selector.findData(
+                        "linear"
+                    )
+                )
+
+            plot_scale_selector.setCurrentIndex(
+                plot_scale_index
+            )
+
             sensor_layout.addWidget(
                 sensor_label,
                 row,
@@ -281,11 +335,17 @@ class ConfigurationWindow(QDialog):
                 row,
                 3,
             )
+            sensor_layout.addWidget(
+                plot_scale_selector,
+                row,
+                4,
+            )
 
             self.sensor_controls[sensor_name] = {
                 "enabled": enabled_checkbox,
                 "port": port_selector,
                 "nickname": nickname_edit,
+                "plot_scale": plot_scale_selector,
             }
 
         main_layout.addWidget(group_box)
@@ -331,7 +391,6 @@ class ConfigurationWindow(QDialog):
         )
 
         for label, period_ms in self.ACQUISITION_PERIODS:
-
             self.period_selector.addItem(
                 label,
                 period_ms,
@@ -519,6 +578,12 @@ class ConfigurationWindow(QDialog):
                 .strip()
             )
 
+            plot_scale = (
+                controls["plot_scale"]
+                .currentData()
+                or "linear"
+            )
+
             if enabled and not port:
                 QMessageBox.warning(
                     self,
@@ -590,6 +655,10 @@ class ConfigurationWindow(QDialog):
             self.config["sensors"][sensor_name][
                 "nickname"
             ] = nickname
+
+            self.config["sensors"][sensor_name][
+                "plot_scale"
+            ] = plot_scale
 
         logging_directory = (
             self.directory_edit.text().strip()

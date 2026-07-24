@@ -3,13 +3,13 @@ GUI/help.py
 
 Displays the OpenLabDAQ help documentation.
 
-The help content is stored separately in help_content.html so that
-instructions, links, and images can be updated without modifying the
-Python code.
+The user-facing help content is stored separately in help_content.html so
+operating instructions can be updated without changing the Python window code.
+The current help document covers plot-scale selection, sensor status colors,
+runtime sensor recovery, Recent Events, logging, and manual event timestamps.
 
-The local HTML instructions work without an internet connection.
-External links open in the user's default web browser when internet
-access is available.
+The local HTML instructions work without an internet connection. External
+links open in the user's default web browser when internet access is available.
 """
 
 from pathlib import Path
@@ -30,7 +30,7 @@ HELP_FILE = Path(__file__).resolve().parent / "help_content.html"
 
 class HelpWindow(QDialog):
     """
-    Displays the local OpenLabDAQ help documentation.
+    Display the local OpenLabDAQ help documentation.
     """
 
     def __init__(self):
@@ -44,8 +44,8 @@ class HelpWindow(QDialog):
         self.help_browser = QTextBrowser()
         self.help_browser.setOpenExternalLinks(True)
 
-        # Allows the HTML file to find future local images or
-        # additional documentation stored in the GUI directory.
+        # Allows the HTML file to find local images or additional
+        # documentation stored in the GUI directory.
         self.help_browser.setSearchPaths(
             [str(HELP_FILE.parent)]
         )
@@ -72,7 +72,6 @@ class HelpWindow(QDialog):
         """
 
         if HELP_FILE.exists():
-
             self.help_browser.setSource(
                 QUrl.fromLocalFile(
                     str(HELP_FILE)
@@ -80,7 +79,6 @@ class HelpWindow(QDialog):
             )
 
         else:
-
             self.help_browser.setHtml(
                 f"""
                 <h1>OpenLabDAQ Help</h1>

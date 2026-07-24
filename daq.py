@@ -61,7 +61,7 @@ class DAQ:
 
         # Failed sensors are reconnected periodically rather than on every
         # acquisition cycle.
-        self.reconnect_interval = 5.0
+        self.reconnect_interval = 60.0
 
         # Runtime events are collected here for the GUI to add to the
         # existing human-readable logbook.

@@ -1,11 +1,17 @@
 """
 GUI/sensor_panel.py
 
-Displays the latest value and connection status for every measurement
+Displays the latest value and current read status for every measurement
 stored in History.
 
-Sensor nicknames affect only the GUI. History and CSV column names remain
-unchanged.
+Operation
+---------
+- Uses optional sensor nicknames only for GUI labels.
+- Shows a green dot when the latest acquisition contains a valid reading.
+- Shows a red dot when the latest acquisition contains None for that sensor.
+- Keeps the last valid value visible while a sensor is temporarily unavailable.
+- Shows gray dots after acquisition stops.
+- Reads only History; it does not communicate with sensor drivers or the DAQ.
 """
 
 from PySide6.QtWidgets import (
@@ -29,13 +35,7 @@ class SensorPanel(QWidget):
         self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(0, 0, 0, 0)
 
-        self.message_label = QLabel("No sensor data")
-        self.message_label.setStyleSheet("""
-            font-size: 22px;
-        """)
-
-        self.layout.addWidget(self.message_label)
-        self.layout.addStretch()
+        self.show_message("No sensor data")
 
     # ---------------------------------------------------------
 
@@ -55,6 +55,13 @@ class SensorPanel(QWidget):
     # ---------------------------------------------------------
 
     def update_from_history(self, history):
+        """
+        Update values and status dots from the latest History record.
+
+        A None value means that the DAQ could not obtain a reading during
+        the latest acquisition cycle. The status dot becomes red, while the
+        last valid value remains visible.
+        """
 
         record = history.get_latest_record()
 
@@ -71,29 +78,33 @@ class SensorPanel(QWidget):
             self.build_rows(measurement_columns)
 
         for column in measurement_columns:
-
             value = record[column]
 
             status_label = self.sensor_rows[column]["status"]
             value_label = self.sensor_rows[column]["value"]
 
-            status_label.setStyleSheet("""
-                color: green;
-                font-size: 24px;
-            """)
+            if value is None:
+                self.set_status_failed(status_label)
 
+                # Keep the last valid value visible. If the sensor has never
+                # produced a valid value, the initial placeholder remains.
+                continue
+
+            self.set_status_running(status_label)
             value_label.setText(self.format_value(value))
 
     # ---------------------------------------------------------
 
     def build_rows(self, columns):
+        """
+        Create one status-and-value row for every History measurement.
+        """
 
         self.clear_layout()
 
         self.sensor_rows = {}
 
         for column in columns:
-
             container = QWidget()
             container_layout = QVBoxLayout(container)
             container_layout.setContentsMargins(0, 0, 0, 0)
@@ -101,10 +112,7 @@ class SensorPanel(QWidget):
             name_layout = QHBoxLayout()
 
             status_label = QLabel("●")
-            status_label.setStyleSheet("""
-                color: gray;
-                font-size: 24px;
-            """)
+            self.set_status_stopped(status_label)
 
             name_label = QLabel()
             name_label.setStyleSheet("""
@@ -147,28 +155,94 @@ class SensorPanel(QWidget):
         Show an immediate connection message while the DAQ connects.
         """
 
-        self.clear_layout()
         self.sensor_rows = {}
-
-        self.message_label = QLabel("Connecting sensors...")
-        self.message_label.setStyleSheet("""
-            font-size: 22px;
-            font-weight: bold;
-        """)
-
-        self.layout.addWidget(self.message_label)
-        self.layout.addStretch()
+        self.show_message(
+            "Connecting sensors...",
+            bold=True,
+        )
 
     # ---------------------------------------------------------
 
     def set_stopped(self):
+        """
+        Mark all visible sensors as inactive after acquisition stops.
+        """
+
+        if not self.sensor_rows:
+            self.show_message("No sensor data")
+            return
 
         for row in self.sensor_rows.values():
+            self.set_status_stopped(
+                row["status"]
+            )
 
-            row["status"].setStyleSheet("""
-                color: gray;
-                font-size: 24px;
-            """)
+    # ---------------------------------------------------------
+    # Status formatting
+    # ---------------------------------------------------------
+
+    @staticmethod
+    def set_status_running(status_label):
+        """
+        Show that the latest sensor reading succeeded.
+        """
+
+        status_label.setStyleSheet("""
+            color: green;
+            font-size: 24px;
+        """)
+        status_label.setToolTip(
+            "Latest reading successful."
+        )
+
+    @staticmethod
+    def set_status_failed(status_label):
+        """
+        Show that the latest sensor reading failed.
+        """
+
+        status_label.setStyleSheet("""
+            color: #b94a48;
+            font-size: 24px;
+        """)
+        status_label.setToolTip(
+            "Latest reading failed. The displayed value is the last "
+            "valid reading."
+        )
+
+    @staticmethod
+    def set_status_stopped(status_label):
+        """
+        Show that acquisition is not currently running.
+        """
+
+        status_label.setStyleSheet("""
+            color: gray;
+            font-size: 24px;
+        """)
+        status_label.setToolTip(
+            "Acquisition stopped."
+        )
+
+    # ---------------------------------------------------------
+
+    def show_message(self, text, bold=False):
+        """
+        Replace the panel contents with a short status message.
+        """
+
+        self.clear_layout()
+
+        self.message_label = QLabel(text)
+        self.message_label.setStyleSheet(
+            f"""
+            font-size: 22px;
+            font-weight: {'bold' if bold else 'normal'};
+            """
+        )
+
+        self.layout.addWidget(self.message_label)
+        self.layout.addStretch()
 
     # ---------------------------------------------------------
 
@@ -206,7 +280,6 @@ class SensorPanel(QWidget):
         )
 
         for sensor_name in sensor_names:
-
             is_exact_name = column == sensor_name
             has_unit_suffix = column.startswith(
                 f"{sensor_name} ("
@@ -235,11 +308,12 @@ class SensorPanel(QWidget):
     # ---------------------------------------------------------
 
     def clear_layout(self):
+        """
+        Remove all current panel widgets.
+        """
 
         while self.layout.count():
-
             item = self.layout.takeAt(0)
-
             widget = item.widget()
 
             if widget is not None:
@@ -249,6 +323,9 @@ class SensorPanel(QWidget):
 
     @staticmethod
     def format_value(value):
+        """
+        Format floating-point values compactly, including scientific notation.
+        """
 
         if isinstance(value, float):
             return f"{value:.4g}"

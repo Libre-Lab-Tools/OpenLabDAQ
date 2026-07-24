@@ -8,6 +8,8 @@ Operation
 - Creates one plot automatically for each measurement column.
 - Provides selectable history windows from 5 minutes to 3 days.
 - Uses clock time on the x-axis.
+- Applies a configurable linear or logarithmic y-axis per sensor.
+- Excludes zero and negative values only from logarithmic plots.
 - Automatically rescales each y-axis using only visible data.
 - Allows plots to be pinned to the top of the scrollable panel.
 - Uses optional sensor nicknames only for plot titles.
@@ -47,11 +49,21 @@ class PlotPanel(QWidget):
         "3 days": 4320,
     }
 
-    def __init__(self, sensor_nicknames=None):
+    def __init__(
+        self,
+        sensor_nicknames=None,
+        sensor_plot_scales=None,
+    ):
         super().__init__()
 
         # Maps official sensor names to optional GUI nicknames.
         self.sensor_nicknames = dict(sensor_nicknames or {})
+
+        # Maps official sensor names to "linear" or "log". Missing or
+        # unsupported values safely default to linear.
+        self.sensor_plot_scales = self.normalize_plot_scales(
+            sensor_plot_scales
+        )
 
         self.plot_widgets = {}
         self.plot_curves = {}
@@ -90,6 +102,52 @@ class PlotPanel(QWidget):
                 title_label,
                 column,
             )
+
+    def set_sensor_plot_scales(self, sensor_plot_scales):
+        """
+        Replace the sensor plot-scale mapping and refresh existing plots.
+        """
+
+        self.sensor_plot_scales = self.normalize_plot_scales(
+            sensor_plot_scales
+        )
+
+        for column, plot_widget in self.plot_widgets.items():
+            plot_widget.setLogMode(
+                x=False,
+                y=self.is_log_scale(column),
+            )
+
+        if self.history is not None:
+            self.update_from_history(
+                self.history
+            )
+
+    @staticmethod
+    def normalize_plot_scales(sensor_plot_scales):
+        """
+        Return a clean sensor-to-scale mapping.
+
+        Older configuration files may not contain plot_scale. Any missing or
+        unsupported value is treated as linear.
+        """
+
+        normalized = {}
+
+        for sensor_name, scale in dict(
+            sensor_plot_scales or {}
+        ).items():
+            scale_text = str(
+                scale or "linear"
+            ).strip().lower()
+
+            normalized[sensor_name] = (
+                "log"
+                if scale_text == "log"
+                else "linear"
+            )
+
+        return normalized
 
     # ---------------------------------------------------------
     # Layout
@@ -531,6 +589,13 @@ class PlotPanel(QWidget):
             "Time",
         )
 
+        # PyQtGraph performs the logarithmic transformation only for the
+        # displayed plot. History and CSV values remain unchanged.
+        plot_widget.setLogMode(
+            x=False,
+            y=self.is_log_scale(column),
+        )
+
         # Hide PyQtGraph's automatic-range button.
         plot_widget.getPlotItem().hideButtons()
 
@@ -635,17 +700,70 @@ class PlotPanel(QWidget):
         return column
 
     # ---------------------------------------------------------
+    # Plot-scale selection
+    # ---------------------------------------------------------
+
+    def get_sensor_name_for_column(self, column):
+        """
+        Return the configured sensor name represented by a History column.
+        """
+
+        sensor_names = sorted(
+            set(self.sensor_plot_scales)
+            | set(self.sensor_nicknames),
+            key=len,
+            reverse=True,
+        )
+
+        for sensor_name in sensor_names:
+            if (
+                column == sensor_name
+                or column.startswith(
+                    f"{sensor_name} ("
+                )
+            ):
+                return sensor_name
+
+        return None
+
+    def is_log_scale(self, column):
+        """
+        Return True when the column's sensor is configured for log plotting.
+        """
+
+        sensor_name = self.get_sensor_name_for_column(
+            column
+        )
+
+        if sensor_name is None:
+            return False
+
+        return (
+            self.sensor_plot_scales.get(
+                sensor_name,
+                "linear",
+            )
+            == "log"
+        )
+
+    # ---------------------------------------------------------
     # Plot data
     # ---------------------------------------------------------
 
-    @staticmethod
-    def get_plot_data(records, column):
+    def get_plot_data(self, records, column):
         """
         Extract timestamps and valid numerical values.
+
+        Logarithmic plots display only strictly positive values. Linear plots
+        continue to display zero and negative values normally.
         """
 
         times = []
         values = []
+
+        use_log_scale = self.is_log_scale(
+            column
+        )
 
         for record in records:
 
@@ -661,6 +779,9 @@ class PlotPanel(QWidget):
                 continue
 
             if not math.isfinite(numeric_value):
+                continue
+
+            if use_log_scale and numeric_value <= 0:
                 continue
 
             times.append(
@@ -682,6 +803,10 @@ class PlotPanel(QWidget):
     ):
         """
         Set the visible time range and automatically scale y.
+
+        PyQtGraph stores the visible y-range in logarithmic coordinates when
+        log mode is active, so log plots use log10(values) only for range
+        calculation. The curve still receives the original pressure values.
         """
 
         plot_widget = self.plot_widgets[
@@ -695,6 +820,34 @@ class PlotPanel(QWidget):
         )
 
         if not values:
+            return
+
+        if self.is_log_scale(column):
+            transformed_values = [
+                math.log10(value)
+                for value in values
+                if value > 0
+            ]
+
+            if not transformed_values:
+                return
+
+            minimum = min(transformed_values)
+            maximum = max(transformed_values)
+
+            if minimum == maximum:
+                padding = 0.10
+            else:
+                padding = max(
+                    (maximum - minimum) * 0.10,
+                    0.05,
+                )
+
+            plot_widget.setYRange(
+                minimum - padding,
+                maximum + padding,
+                padding=0,
+            )
             return
 
         minimum = min(values)

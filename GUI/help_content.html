@@ -88,13 +88,26 @@
         <li>Enable the sensors you want to use.</li>
         <li>Select or enter the COM port for each sensor.</li>
         <li>Optionally enter a GUI nickname, such as <em>Chamber Temperature</em>.</li>
+        <li>
+            Select a plot scale for each sensor:
+            <strong>Linear</strong> or <strong>Logarithmic</strong>.
+        </li>
         <li>Select the acquisition period and saving directory.</li>
         <li>Click <span class="button-name">Save</span>.</li>
     </ol>
 
     <div class="note">
         A nickname changes only the sensor and plot labels shown in the GUI.
-        CSV headers keep the official sensor name.
+        CSV headers keep the official sensor name. Plot scale changes only
+        how values are displayed; History and CSV files keep the original
+        numerical values.
+    </div>
+
+    <div class="note">
+        Use a logarithmic plot for measurements that span several orders of
+        magnitude, such as high-vacuum pressure. Logarithmic plots can display
+        only positive values. Zero and negative values are omitted from the
+        plot but are not changed in History or exported data.
     </div>
 
     <h3>2. Start Acquisition</h3>
@@ -109,7 +122,40 @@
         Current values appear on the left and plots update automatically.
     </p>
 
-    <h3>3. View and Export History</h3>
+    <h3>3. Understand Sensor Status</h3>
+
+    <ul>
+        <li><strong>Green dot:</strong> the latest sensor reading succeeded.</li>
+        <li>
+            <strong>Red dot:</strong> the latest reading failed. OpenLabDAQ
+            keeps displaying the last valid value while it attempts to recover
+            communication.
+        </li>
+        <li><strong>Gray dot:</strong> acquisition is stopped.</li>
+    </ul>
+
+    <p>
+        A runtime sensor failure does not stop the complete DAQ. Other sensors
+        continue acquiring data. The failed sensor produces blank CSV values
+        until communication is restored. OpenLabDAQ retries the connection
+        approximately once per minute.
+    </p>
+
+    <h3>4. View Recent Events</h3>
+
+    <p>
+        The <strong>Recent Events</strong> panel shows the newest events from
+        the current acquisition session, including sensor communication failures
+        and recoveries. It remains available whether or not CSV logging is active.
+    </p>
+
+    <p>
+        Recent Events is temporary and is cleared when a new acquisition session
+        begins. When logging is active, the same automatic events are also written
+        to the permanent logbook.
+    </p>
+
+    <h3>5. View and Export History</h3>
 
     <ul>
         <li>
@@ -130,7 +176,7 @@
         measurements are still available in History.
     </div>
 
-    <h3>4. Start Logging</h3>
+    <h3>6. Start Logging</h3>
 
     <ol>
         <li>Start acquisition.</li>
@@ -154,7 +200,7 @@
         information and timestamped events.
     </p>
 
-    <h3>5. Add an Event</h3>
+    <h3>7. Add a Manual Event</h3>
 
     <p>
         While logging is active, click
@@ -162,8 +208,9 @@
     </p>
 
     <p>
-        Enter a short event and an optional comment. OpenLabDAQ automatically
-        adds the current timestamp to the logbook.
+        OpenLabDAQ captures the event timestamp immediately when the dialog
+        opens. You may then take time to enter a short event and an optional
+        comment without changing the recorded event time.
     </p>
 
     <p>Examples include:</p>
@@ -175,7 +222,11 @@
         <li>Sample inserted</li>
     </ul>
 
-    <h3>6. Stop Logging or Acquisition</h3>
+    <p>
+        The event appears in Recent Events and is written to the active logbook.
+    </p>
+
+    <h3>8. Stop Logging or Acquisition</h3>
 
     <p>
         Click <span class="button-name">LOGGING</span> to stop saving data and
@@ -187,11 +238,16 @@
         disconnect all sensors. Stopping acquisition also stops logging.
     </p>
 
-    <h2>History and Permanent Files</h2>
+    <h2>History, Recent Events, and Permanent Files</h2>
 
     <p>
         History is temporary and is stored in computer memory. OpenLabDAQ keeps
         up to 72 hours during one continuous acquisition session.
+    </p>
+
+    <p>
+        Recent Events is also temporary. It provides operational awareness during
+        the current session but does not replace the permanent logbook.
     </p>
 
     <p>
@@ -229,8 +285,25 @@
     <h3>ADD EVENT is disabled</h3>
 
     <p>
-        Events can be added only while CSV logging and the matching logbook
-        are active.
+        Manual events can be added only while CSV logging and the matching
+        logbook are active. Automatic sensor events still appear in Recent
+        Events when logging is off.
+    </p>
+
+    <h3>A sensor dot is red</h3>
+
+    <p>
+        The most recent read failed. Check the instrument power, cable, COM port,
+        and communication settings. OpenLabDAQ continues reading other sensors
+        and periodically attempts to reconnect the failed sensor.
+    </p>
+
+    <h3>A logarithmic plot is empty</h3>
+
+    <p>
+        Logarithmic plots require positive values. Confirm that the sensor is
+        returning positive measurements and that the selected plot scale is
+        appropriate for the instrument's operating range.
     </p>
 
     <h3>Export Data reports no data</h3>
@@ -240,16 +313,17 @@
         acquisition and wait for data to appear.
     </p>
 
-    <h3>A sensor does not connect</h3>
+    <h3>A sensor does not connect at startup</h3>
 
     <p>
         Check its COM port, cable, power, and instrument communication settings.
-        OpenLabDAQ displays the error reported by the sensor driver.
+        Initial connection failures stop startup so the configuration can be
+        corrected before acquisition begins.
     </p>
 
     <div class="warning">
-        History is not permanent. Use normal logging or Export Data before
-        stopping the program when measurements must be preserved.
+        History and Recent Events are not permanent. Use normal logging or
+        Export Data when measurements and events must be preserved.
     </div>
 
 </body>

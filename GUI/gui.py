@@ -7,18 +7,21 @@ Operation
 ---------
 - The application name remains OpenLabDAQ.
 - The large system title is loaded from config.json.
-- Saving the configuration updates the title and sensor nicknames.
+- Saving the configuration updates the title, sensor nicknames, and plot scales.
 - RUN connects the DAQ and starts continuous acquisition.
 - STOP disconnects the DAQ.
 - LOAD asks for optional run information and starts CSV logging.
 - LOGGING stops CSV logging and closes the matching logbook.
-- ADD EVENT appends a timestamped event while logging is active.
+- ADD EVENT captures the event time when the dialog first opens.
+- Automatic sensor failure and recovery events remain visible in Recent Events
+  even when CSV logging is not active.
 - All displayed measurements are read only from History.
-- Sensor nicknames affect only the GUI.
+- Sensor nicknames and plot scales affect only the GUI.
 """
 
 import ctypes
 import sys
+from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtGui import QIcon
@@ -52,6 +55,7 @@ from PySide6.QtWidgets import (
 from config import load_config
 from daq import DAQ
 from logbook import Logbook
+from GUI.event_panel import EventPanel
 from GUI.gui_configuration import ConfigurationWindow
 from GUI.help import HelpWindow
 from GUI.plot_panel import PlotPanel
@@ -176,8 +180,11 @@ class EventDialog(QDialog):
     Collect a timestamped event description and optional comment.
     """
 
-    def __init__(self, parent=None):
+    def __init__(self, event_time, parent=None):
         super().__init__(parent)
+
+        # Capture the event time before the user begins typing details.
+        self.event_time = event_time
 
         self.setWindowTitle(
             "Add Event"
@@ -186,6 +193,15 @@ class EventDialog(QDialog):
 
         main_layout = QVBoxLayout(self)
         form_layout = QFormLayout()
+
+        event_time_label = QLabel(
+            self.event_time.strftime(
+                "%Y-%m-%d %H:%M:%S.%f"
+            )[:-3]
+        )
+        event_time_label.setToolTip(
+            "This timestamp was captured when ADD EVENT was clicked."
+        )
 
         self.event_edit = QLineEdit()
         self.event_edit.setPlaceholderText(
@@ -198,6 +214,10 @@ class EventDialog(QDialog):
         )
         self.comment_edit.setMinimumHeight(120)
 
+        form_layout.addRow(
+            "Event time:",
+            event_time_label,
+        )
         form_layout.addRow(
             "Event:",
             self.event_edit,
@@ -253,6 +273,7 @@ class EventDialog(QDialog):
         Return the entered event and comment.
         """
         return {
+            "timestamp": self.event_time,
             "event": self.event_edit.text().strip(),
             "comment": self.comment_edit.toPlainText().strip(),
         }
@@ -416,12 +437,17 @@ class MainWindow(QMainWindow):
         sensor_nicknames = (
             self.get_sensor_nicknames()
         )
+        sensor_plot_scales = (
+            self.get_sensor_plot_scales()
+        )
 
         self.sensor_panel = SensorPanel(
             sensor_nicknames
         )
+        self.event_panel = EventPanel()
         self.plot_panel = PlotPanel(
-            sensor_nicknames
+            sensor_nicknames,
+            sensor_plot_scales,
         )
 
         left_layout.addWidget(
@@ -434,8 +460,16 @@ class MainWindow(QMainWindow):
             self.event_button
         )
         left_layout.addSpacing(30)
+        # Live values receive the remaining vertical space. The compact
+        # Recent Events panel keeps a fixed height and does not compete with
+        # the primary sensor display.
         left_layout.addWidget(
-            self.sensor_panel
+            self.sensor_panel,
+            1,
+        )
+        left_layout.addSpacing(12)
+        left_layout.addWidget(
+            self.event_panel,
         )
 
         body_layout.addWidget(
@@ -491,9 +525,31 @@ class MainWindow(QMainWindow):
             ).items()
         }
 
+    @staticmethod
+    def get_sensor_plot_scales():
+        """
+        Read the configured linear or logarithmic plot scale per sensor.
+        """
+
+        config = load_config()
+
+        return {
+            sensor_name: str(
+                settings.get(
+                    "plot_scale",
+                    "linear",
+                )
+                or "linear"
+            ).strip().lower()
+            for sensor_name, settings in config.get(
+                "sensors",
+                {},
+            ).items()
+        }
+
     def reload_display_configuration(self):
         """
-        Reload the system title and sensor nicknames after Save.
+        Reload the title, sensor nicknames, and plot scales after Save.
         """
 
         self.title_label.setText(
@@ -509,6 +565,10 @@ class MainWindow(QMainWindow):
         )
         self.plot_panel.set_sensor_nicknames(
             sensor_nicknames
+        )
+
+        self.plot_panel.set_sensor_plot_scales(
+            self.get_sensor_plot_scales()
         )
 
     # ---------------------------------------------------------
@@ -591,6 +651,10 @@ class MainWindow(QMainWindow):
 
         self.running = True
 
+        # A successful connection begins a new acquisition session. Clear
+        # events from the previous session immediately before the first read.
+        self.event_panel.clear_events()
+
         self.run_button.setEnabled(True)
         self.run_button.setText(
             "RUNNING"
@@ -659,8 +723,8 @@ class MainWindow(QMainWindow):
         ):
             self.start_logbook_if_ready()
 
-        # Add automatic sensor failure and recovery events to the existing
-        # logbook. Events are discarded when CSV logging is not active.
+        # Display automatic sensor failure and recovery events. The same
+        # events are also written to the logbook when logging is active.
         self.record_daq_events()
 
         # Display components read only from History.
@@ -760,7 +824,11 @@ class MainWindow(QMainWindow):
 
     def record_daq_events(self):
         """
-        Add queued DAQ sensor events to the active logbook.
+        Display queued DAQ sensor events and write them to an active logbook.
+
+        Events remain visible in the Recent Events panel even when permanent
+        CSV logging is not active. When a logbook is open, the same event is
+        also written to the experiment logbook.
         """
 
         if self.daq is None:
@@ -776,24 +844,42 @@ class MainWindow(QMainWindow):
             return
 
         events = pop_events()
-
-        if not self.logbook.is_active:
-            return
+        logbook_error = None
 
         for event_information in events:
-            try:
-                self.logbook.add_event(
-                    event_information["event"],
-                    event_information.get("comment", ""),
-                )
+            event_time = datetime.now()
+            event_text = event_information["event"]
+            comment_text = event_information.get(
+                "comment",
+                "",
+            )
 
-            except (OSError, RuntimeError, ValueError) as error:
-                QMessageBox.warning(
-                    self,
-                    "Automatic Event Error",
-                    str(error),
-                )
-                break
+            self.event_panel.add_event(
+                event_time,
+                event_text,
+                comment_text,
+            )
+
+            if (
+                self.logbook.is_active
+                and logbook_error is None
+            ):
+                try:
+                    self.logbook.add_event(
+                        event_text,
+                        comment_text,
+                        timestamp=event_time,
+                    )
+
+                except (OSError, RuntimeError, ValueError, TypeError) as error:
+                    logbook_error = error
+
+        if logbook_error is not None:
+            QMessageBox.warning(
+                self,
+                "Automatic Event Error",
+                str(logbook_error),
+            )
 
     # ---------------------------------------------------------
     # Logging and logbook control
@@ -1024,7 +1110,10 @@ class MainWindow(QMainWindow):
 
     def event_pressed(self):
         """
-        Append one timestamped event to the active logbook.
+        Append one timestamped manual event to the active logbook.
+
+        The timestamp is captured when the user first clicks ADD EVENT, not
+        when the user finishes typing the event details.
         """
 
         if (
@@ -1033,8 +1122,11 @@ class MainWindow(QMainWindow):
         ):
             return
 
+        event_time = datetime.now()
+
         dialog = EventDialog(
-            self
+            event_time,
+            self,
         )
 
         if dialog.exec() != QDialog.Accepted:
@@ -1044,13 +1136,22 @@ class MainWindow(QMainWindow):
             dialog.get_event_information()
         )
 
+        # The in-memory event history is updated first so the event remains
+        # visible even if the permanent logbook write reports an error.
+        self.event_panel.add_event(
+            event_information["timestamp"],
+            event_information["event"],
+            event_information["comment"],
+        )
+
         try:
             self.logbook.add_event(
                 event_information["event"],
                 event_information["comment"],
+                timestamp=event_information["timestamp"],
             )
 
-        except (OSError, RuntimeError, ValueError) as error:
+        except (OSError, RuntimeError, ValueError, TypeError) as error:
             QMessageBox.critical(
                 self,
                 "Event Error",

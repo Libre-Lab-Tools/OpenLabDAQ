@@ -7,7 +7,9 @@ Responsibilities
 ----------------
 - Create a logbook using the active CSV filename.
 - Write optional run information at the beginning of the file.
-- Append timestamped events while CSV logging is active.
+- Append timestamped manual and automatic events while logging is active.
+- Accept an explicit event timestamp so manual events can use the time at
+  which the user first opened the Add Event dialog.
 - Record when the logging session ends.
 
 This file is independent from logger.py. It does not read or write
@@ -106,7 +108,12 @@ class Logbook:
 
         self.file.flush()
 
-    def add_event(self, event, comment=""):
+    def add_event(
+        self,
+        event,
+        comment="",
+        timestamp=None,
+    ):
         """
         Append one timestamped event.
 
@@ -116,6 +123,9 @@ class Logbook:
             Short description of what happened.
         comment : str
             Optional additional details.
+        timestamp : datetime or None
+            Time to associate with the event. When omitted, the event is
+            timestamped when it is written.
         """
         if not self.is_active:
             raise RuntimeError(
@@ -131,8 +141,17 @@ class Logbook:
 
         comment_text = str(comment or "").strip()
 
+        if timestamp is None:
+            event_time = datetime.now()
+        elif isinstance(timestamp, datetime):
+            event_time = timestamp
+        else:
+            raise TypeError(
+                "Event timestamp must be a datetime object or None."
+            )
+
         self.file.write(
-            f"\n[{self._format_timestamp(datetime.now())}]\n"
+            f"\n[{self._format_timestamp(event_time)}]\n"
         )
         self.file.write(
             f"Event: {event_text}\n"

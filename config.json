@@ -1,39 +1,44 @@
 {
     "display": {
-        "title": "Tube Furnace DAQ"
+        "title": "Tube Furnace"
     },
     "sensors": {
         "FurnaceTC": {
             "enabled": true,
-            "port": "COM9",
-            "nickname": "Furnace Temperature"
+            "port": "COM8",
+            "nickname": "tube furnace",
+            "plot_scale": "linear"
         },
         "HornetRGA": {
             "enabled": false,
             "port": "COM11",
-            "nickname": "RGA pressure"
+            "nickname": "RGA pressure",
+            "plot_scale": "log"
         },
         "BusyBee": {
             "enabled": false,
             "port": null,
-            "nickname": "Furnace Pressure"
+            "nickname": "Furnace Pressure",
+            "plot_scale": "linear"
         },
         "MassFlow": {
             "enabled": false,
             "port": "COM12",
-            "nickname": "Gas Flow"
+            "nickname": "Gas Flow",
+            "plot_scale": "linear"
         },
         "OmegaTC_10": {
-            "enabled": false,
+            "enabled": true,
             "port": "COM10",
-            "nickname": "Probe Temperature"
+            "nickname": "Probe Temperature",
+            "plot_scale": "linear"
         }
     },
     "acquisition": {
         "period_ms": 1000
     },
     "logging": {
-        "directory": "C:/Users/raulm/Desktop"
+        "directory": "C:/Users/raulm/Desktop/Test DAQ experiment"
     },
     "history": {
         "retention_hours": 72
