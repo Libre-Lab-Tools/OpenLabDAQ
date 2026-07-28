@@ -37,6 +37,43 @@ from PySide6.QtWidgets import (
 )
 
 
+
+class ScientificLogAxis(pg.AxisItem):
+    """
+    Left axis that displays logarithmic tick labels in scientific notation.
+
+    Examples
+    --------
+    0.1   -> 1e-1
+    0.05  -> 5e-2
+    0.005 -> 5e-3
+
+    Linear plots continue to use PyQtGraph's normal tick formatting.
+    """
+
+    def logTickStrings(self, values, scale, spacing):
+        """
+        Format logarithmic-axis values using compact scientific notation.
+        """
+
+        labels = []
+
+        for log_value in values:
+            actual_value = (10.0 ** float(log_value)) * scale
+
+            scientific_text = f"{actual_value:.0e}"
+            mantissa, exponent = scientific_text.split("e")
+
+            # Convert 5e-03 to 5e-3 and 1e+02 to 1e2.
+            exponent_value = int(exponent)
+
+            labels.append(
+                f"{mantissa}e{exponent_value}"
+            )
+
+        return labels
+
+
 class PlotPanel(QWidget):
 
     # Text displayed to the user and corresponding minutes.
@@ -569,9 +606,17 @@ class PlotPanel(QWidget):
             orientation="bottom"
         )
 
+        # Use a custom left axis so logarithmic plots display compact
+        # scientific notation such as 5e-3 instead of 0.005.
+        left_axis = ScientificLogAxis(
+            orientation="left"
+        )
+        left_axis.setWidth(75)
+
         plot_widget = pg.PlotWidget(
             axisItems={
-                "bottom": time_axis
+                "bottom": time_axis,
+                "left": left_axis,
             }
         )
 

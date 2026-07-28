@@ -1,10 +1,10 @@
 {
     "display": {
-        "title": "Tube Furnace"
+        "title": "Tube Furnace DAQ"
     },
     "sensors": {
         "FurnaceTC": {
-            "enabled": true,
+            "enabled": false,
             "port": "COM8",
             "nickname": "tube furnace",
             "plot_scale": "linear"
@@ -16,8 +16,8 @@
             "plot_scale": "log"
         },
         "BusyBee": {
-            "enabled": false,
-            "port": null,
+            "enabled": true,
+            "port": "COM13",
             "nickname": "Furnace Pressure",
             "plot_scale": "linear"
         },
@@ -28,14 +28,14 @@
             "plot_scale": "linear"
         },
         "OmegaTC_10": {
-            "enabled": true,
+            "enabled": false,
             "port": "COM10",
             "nickname": "Probe Temperature",
             "plot_scale": "linear"
         }
     },
     "acquisition": {
-        "period_ms": 1000
+        "period_ms": 100
     },
     "logging": {
         "directory": "C:/Users/raulm/Desktop/Test DAQ experiment"
