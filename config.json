@@ -4,26 +4,26 @@
     },
     "sensors": {
         "FurnaceTC": {
-            "enabled": false,
-            "port": "COM8",
-            "nickname": "tube furnace",
+            "enabled": true,
+            "port": "COM6",
+            "nickname": "Furnace Temperature",
             "plot_scale": "linear"
         },
         "HornetRGA": {
-            "enabled": false,
-            "port": "COM11",
-            "nickname": "RGA pressure",
+            "enabled": true,
+            "port": "COM5",
+            "nickname": "Hornet Pressure",
             "plot_scale": "log"
         },
         "BusyBee": {
             "enabled": true,
-            "port": "COM13",
+            "port": "COM4",
             "nickname": "Furnace Pressure",
-            "plot_scale": "linear"
+            "plot_scale": "log"
         },
         "MassFlow": {
-            "enabled": false,
-            "port": "COM12",
+            "enabled": true,
+            "port": "COM7",
             "nickname": "Gas Flow",
             "plot_scale": "linear"
         },
@@ -35,10 +35,10 @@
         }
     },
     "acquisition": {
-        "period_ms": 100
+        "period_ms": 1000
     },
     "logging": {
-        "directory": "C:/Users/raulm/Desktop/Test DAQ experiment"
+        "directory": "C:/Users/yxt27/Desktop/GitHub/OpenLabDAQ/Data"
     },
     "history": {
         "retention_hours": 72
