@@ -40,16 +40,141 @@ from PySide6.QtWidgets import (
 
 class ScientificLogAxis(pg.AxisItem):
     """
-    Left axis that displays logarithmic tick labels in scientific notation.
+    Left axis that displays logarithmic values in scientific notation.
 
-    Examples
-    --------
-    0.1   -> 1e-1
-    0.05  -> 5e-2
-    0.005 -> 5e-3
-
-    Linear plots continue to use PyQtGraph's normal tick formatting.
+    PyQtGraph's normal logarithmic ticks are retained when the visible range
+    spans at least one decade. For narrower ranges, evenly spaced values are
+    generated in the original measurement units and then positioned on the
+    logarithmic axis. This prevents narrow log plots from showing only one
+    label while keeping broad plots uncluttered.
     """
+
+    NARROW_RANGE_DECADES = 1.0
+    MINIMUM_LABEL_SPACING_PIXELS = 65
+    MAXIMUM_INTERVALS = 7
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._adaptive_tick_step = None
+
+    def logTickValues(self, minVal, maxVal, size, stdTicks):
+        """
+        Return standard log ticks for broad ranges and adaptive ticks for
+        ranges smaller than one decade.
+        """
+
+        minimum_log, maximum_log = sorted(
+            (float(minVal), float(maxVal))
+        )
+        log_span = maximum_log - minimum_log
+
+        if (
+            not math.isfinite(log_span)
+            or log_span <= 0
+            or log_span >= self.NARROW_RANGE_DECADES
+        ):
+            self._adaptive_tick_step = None
+            return super().logTickValues(
+                minVal,
+                maxVal,
+                size,
+                stdTicks,
+            )
+
+        minimum_value = 10.0 ** minimum_log
+        maximum_value = 10.0 ** maximum_log
+        value_span = maximum_value - minimum_value
+
+        if (
+            not math.isfinite(value_span)
+            or value_span <= 0
+        ):
+            self._adaptive_tick_step = None
+            return super().logTickValues(
+                minVal,
+                maxVal,
+                size,
+                stdTicks,
+            )
+
+        target_intervals = max(
+            2,
+            min(
+                self.MAXIMUM_INTERVALS,
+                int(size / self.MINIMUM_LABEL_SPACING_PIXELS),
+            ),
+        )
+
+        step = self._nice_step(
+            value_span / target_intervals
+        )
+
+        first_tick = (
+            math.ceil(minimum_value / step - 1e-12)
+            * step
+        )
+        last_tick = (
+            math.floor(maximum_value / step + 1e-12)
+            * step
+        )
+
+        tick_values = []
+        tick = first_tick
+
+        # Limit the loop defensively in case floating-point accumulation
+        # behaves unexpectedly for an extremely small range.
+        for _ in range(100):
+            if tick > last_tick + step * 1e-9:
+                break
+
+            if tick > 0:
+                tick_values.append(
+                    math.log10(tick)
+                )
+
+            tick += step
+
+        # A very narrow or awkward range can occasionally produce fewer than
+        # two nice linear ticks. In that case, keep PyQtGraph's standard ticks.
+        if len(tick_values) < 2:
+            self._adaptive_tick_step = None
+            return super().logTickValues(
+                minVal,
+                maxVal,
+                size,
+                stdTicks,
+            )
+
+        self._adaptive_tick_step = step
+
+        # These are the major ticks for the narrow visible range. Their
+        # positions are logarithmic even though their displayed values are
+        # evenly spaced in the original measurement units.
+        return [(None, tick_values)]
+
+    @staticmethod
+    def _nice_step(raw_step):
+        """
+        Round a positive spacing upward to a conventional 1, 2, 5, or 10
+        multiple of a power of ten.
+        """
+
+        exponent = math.floor(
+            math.log10(raw_step)
+        )
+        base = 10.0 ** exponent
+        fraction = raw_step / base
+
+        if fraction <= 1:
+            nice_fraction = 1
+        elif fraction <= 2:
+            nice_fraction = 2
+        elif fraction <= 5:
+            nice_fraction = 5
+        else:
+            nice_fraction = 10
+
+        return nice_fraction * base
 
     def logTickStrings(self, values, scale, spacing):
         """
@@ -59,16 +184,45 @@ class ScientificLogAxis(pg.AxisItem):
         labels = []
 
         for log_value in values:
-            actual_value = (10.0 ** float(log_value)) * scale
+            actual_value = (
+                10.0 ** float(log_value)
+            ) * scale
 
-            scientific_text = f"{actual_value:.0e}"
-            mantissa, exponent = scientific_text.split("e")
+            if actual_value == 0 or not math.isfinite(actual_value):
+                labels.append("")
+                continue
 
-            # Convert 5e-03 to 5e-3 and 1e+02 to 1e2.
-            exponent_value = int(exponent)
+            exponent = math.floor(
+                math.log10(abs(actual_value))
+            )
+            mantissa = actual_value / (
+                10.0 ** exponent
+            )
+
+            decimal_places = 0
+
+            if self._adaptive_tick_step is not None:
+                scaled_step = (
+                    self._adaptive_tick_step
+                    / (10.0 ** exponent)
+                )
+
+                if scaled_step > 0:
+                    decimal_places = max(
+                        0,
+                        min(
+                            6,
+                            -math.floor(
+                                math.log10(scaled_step)
+                            ),
+                        ),
+                    )
+
+            mantissa_text = f"{mantissa:.{decimal_places}f}"
+            mantissa_text = mantissa_text.rstrip("0").rstrip(".")
 
             labels.append(
-                f"{mantissa}e{exponent_value}"
+                f"{mantissa_text}e{exponent}"
             )
 
         return labels

@@ -95,7 +95,10 @@ void handleSerial()
 
         if (readTemperature(temperature))
         {
-            Serial.println(temperature, 2);
+            // Report whole degrees so the Arduino display matches the
+            // resolution used by the furnace controller.
+            long roundedTemperature = (long)round(temperature);
+            Serial.println(roundedTemperature);
         }
         else
         {
