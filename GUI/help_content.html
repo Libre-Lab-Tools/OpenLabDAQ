@@ -125,28 +125,35 @@
     <h3>3. Understand Sensor Status</h3>
 
     <ul>
-        <li><strong>Green dot:</strong> the latest sensor reading succeeded.</li>
         <li>
-            <strong>Red dot:</strong> the latest reading failed. OpenLabDAQ
-            keeps displaying the last valid value while it attempts to recover
-            communication.
+            <strong>Green dot:</strong> the sensor returned a valid reading.
+            Short glitches that succeed during an immediate retry remain green.
+        </li>
+        <li>
+            <strong>Red dot:</strong> all immediate read attempts failed and
+            OpenLabDAQ marked the sensor unavailable. The last valid value may
+            remain visible while new records contain a blank value.
         </li>
         <li><strong>Gray dot:</strong> acquisition is stopped.</li>
     </ul>
 
     <p>
-        A runtime sensor failure does not stop the complete DAQ. Other sensors
-        continue acquiring data. The failed sensor produces blank CSV values
-        until communication is restored. OpenLabDAQ retries the connection
-        approximately once per minute.
+        OpenLabDAQ tries each sensor reading up to three times before declaring
+        a communication failure. If an immediate retry succeeds, the fresh value
+        is recorded normally and no event is created. If all attempts fail, the
+        sensor produces blank CSV values while the other sensors continue.
+        OpenLabDAQ then retries the connection approximately once per minute.
     </p>
 
     <h3>4. View Recent Events</h3>
 
     <p>
         The <strong>Recent Events</strong> panel shows the newest events from
-        the current acquisition session, including sensor communication failures
-        and recoveries. It remains available whether or not CSV logging is active.
+        the current acquisition session, including persistent sensor communication
+        failures and recoveries. A single failed read that succeeds during an
+        immediate retry is treated as a recovered glitch and is not added to
+        Recent Events. The panel remains available whether or not CSV logging is
+        active.
     </p>
 
     <p>
@@ -293,9 +300,10 @@
     <h3>A sensor dot is red</h3>
 
     <p>
-        The most recent read failed. Check the instrument power, cable, COM port,
-        and communication settings. OpenLabDAQ continues reading other sensors
-        and periodically attempts to reconnect the failed sensor.
+        All immediate read attempts failed. Check the instrument power, cable,
+        COM port, and communication settings. OpenLabDAQ continues reading other
+        sensors, records blank values for the failed sensor, and attempts to
+        reconnect it approximately once per minute.
     </p>
 
     <h3>A logarithmic plot is empty</h3>

@@ -3,22 +3,9 @@ BusyBee.py
 
 OpenLabDAQ driver for the Arduino-based Busy Bee pressure interface.
 
-Purpose
--------
-The BusyBee driver translates the Arduino serial communication
-protocol into the standard interface used by OpenLabDAQ.
-
-Responsibilities
-----------------
-- Connect to the configured serial port.
-- Verify the connected instrument.
-- Read the current pressure as a floating-point value.
-- Disconnect from the instrument.
-
-The driver does not perform voltage conversion, pressure calibration,
-logging, plotting, timestamp generation, or experiment control.
-Voltage conversion and pressure calibration are performed by the
-matching BusyBee Arduino firmware.
+The driver performs one communication transaction per read. It returns
+one valid numerical value or raises RuntimeError. Retry and reconnection
+policy belongs to the DAQ.
 """
 
 import math
@@ -28,112 +15,68 @@ import serial
 
 
 class BusyBee:
-    """
-    Driver for the Arduino-based Busy Bee pressure interface.
-    """
+    """Driver for the Arduino-based Busy Bee pressure interface."""
 
     NAME = "BusyBee"
     UNIT = "Torr"
     BAUDRATE = 9600
+    TIMEOUT = 1.0
 
     def __init__(self, port):
-        """
-        Create a BusyBee object.
-
-        Parameters
-        ----------
-        port : str
-            Communication port assigned by OpenLabDAQ.
-        """
-
         self.port = port
         self.serial = None
 
     def connect(self):
-        """
-        Connect to the instrument and verify its identity.
+        """Open the port and verify the programmed Arduino identity."""
 
-        Raises
-        ------
-        RuntimeError
-            If the connected device does not identify itself as
-            BusyBee.
-        """
+        if self.serial is not None and self.serial.is_open:
+            return
 
-        self.serial = serial.Serial(
-            self.port,
-            self.BAUDRATE,
-            timeout=1,
-        )
-
-        # Opening the serial port resets most Arduino Nano boards.
-        time.sleep(2)
-
-        self.serial.reset_input_buffer()
-
-        self.serial.write(b"ID?\n")
-        self.serial.flush()
-
-        response = (
-            self.serial.readline()
-            .decode()
-            .strip()
-        )
-
-        if response != self.NAME:
-            self.disconnect()
-
-            raise RuntimeError(
-                f"Expected {self.NAME}, "
-                f"but received {response!r}."
+        try:
+            self.serial = serial.Serial(
+                port=self.port,
+                baudrate=self.BAUDRATE,
+                timeout=self.TIMEOUT,
+                write_timeout=self.TIMEOUT,
             )
+
+            # Opening the serial port resets most Arduino Nano boards.
+            time.sleep(2)
+
+            response = self._exchange(b"ID?\n")
+
+            if response != self.NAME:
+                raise RuntimeError(
+                    f"Expected {self.NAME}, but received {response!r}."
+                )
+
+        except RuntimeError:
+            self.disconnect()
+            raise
+
+        except (
+            serial.SerialException,
+            serial.SerialTimeoutException,
+        ) as error:
+            self.disconnect()
+            raise RuntimeError(
+                f"{self.NAME} could not open {self.port}: {error}"
+            ) from error
 
     def disconnect(self):
-        """
-        Close the serial connection.
-        """
+        """Close the serial connection safely."""
 
         if self.serial is not None:
-            self.serial.close()
-            self.serial = None
+            try:
+                if self.serial.is_open:
+                    self.serial.close()
+            finally:
+                self.serial = None
 
     def read(self):
-        """
-        Read the current Busy Bee pressure.
+        """Return one corrected pressure value in Torr."""
 
-        Returns
-        -------
-        float
-            Current corrected pressure in Torr.
-
-        Raises
-        ------
-        RuntimeError
-            If the interface is disconnected, returns no response,
-            reports an error, or returns an invalid pressure.
-        """
-
-        if self.serial is None:
-            raise RuntimeError(
-                f"{self.NAME} is not connected."
-            )
-
-        # Remove any unread serial data before requesting a new value.
-        self.serial.reset_input_buffer()
-
-        self.serial.write(b"READ?\n")
-        self.serial.flush()
-
-        response = (
-            self.serial.readline()
-            .decode()
-            .strip()
-        )
-
-        if response == "":
-            raise RuntimeError(
-                f"{self.NAME} returned no response."
-            )
+        response = self._exchange(b"READ?\n")
 
         if response == "ERROR":
             raise RuntimeError(
@@ -145,8 +88,7 @@ class BusyBee:
 
         except ValueError as error:
             raise RuntimeError(
-                f"{self.NAME} returned an invalid value: "
-                f"{response!r}"
+                f"{self.NAME} returned an invalid value: {response!r}"
             ) from error
 
         if not math.isfinite(pressure):
@@ -161,29 +103,44 @@ class BusyBee:
                 f"{response!r}"
             )
 
-        # Do not round. Preserve the pressure supplied by the Arduino.
         return pressure
 
     def get_status(self):
-        """
-        Return the current instrument status.
+        """Return the optional Arduino status response."""
 
-        This optional driver-specific method is not used by the
-        OpenLabDAQ backbone.
-        """
+        return self._exchange(b"STATUS?\n")
 
-        if self.serial is None:
+    def _exchange(self, command):
+        """Send one command and return one decoded response line."""
+
+        if self.serial is None or not self.serial.is_open:
+            raise RuntimeError(f"{self.NAME} is not connected.")
+
+        try:
+            self.serial.reset_input_buffer()
+            self.serial.write(command)
+            self.serial.flush()
+            raw_response = self.serial.readline()
+
+        except (
+            serial.SerialException,
+            serial.SerialTimeoutException,
+        ) as error:
             raise RuntimeError(
-                f"{self.NAME} is not connected."
+                f"{self.NAME} serial communication failed on "
+                f"{self.port}: {error}"
+            ) from error
+
+        if not raw_response:
+            raise RuntimeError(
+                f"{self.NAME} returned no response."
             )
 
-        self.serial.reset_input_buffer()
+        try:
+            return raw_response.decode("ascii").strip()
 
-        self.serial.write(b"STATUS?\n")
-        self.serial.flush()
-
-        return (
-            self.serial.readline()
-            .decode()
-            .strip()
-        )
+        except UnicodeDecodeError as error:
+            raise RuntimeError(
+                f"{self.NAME} returned non-ASCII data: "
+                f"{raw_response!r}"
+            ) from error

@@ -9,13 +9,14 @@ Responsibilities
 - Create enabled sensor drivers.
 - Connect and disconnect sensors.
 - Acquire measurements.
+- Retry short read glitches before declaring a sensor failure.
 - Add acquisition records to History.
 - Start and stop CSV logging.
 """
 
 from datetime import datetime
 from importlib import import_module
-from time import monotonic
+from time import monotonic, sleep
 
 from config import load_config
 from history import History
@@ -58,6 +59,11 @@ class DAQ:
             }
             for sensor in self.sensors
         }
+
+        # A short read glitch is retried before the sensor is marked failed.
+        # These are total attempts, including the first read.
+        self.read_attempts = 3
+        self.read_retry_delay = 0.1
 
         # Failed sensors are reconnected periodically rather than on every
         # acquisition cycle.
@@ -178,6 +184,10 @@ class DAQ:
         """
         Read every enabled sensor and create one record.
 
+        A sensor read is attempted up to three times before the sensor is
+        marked failed. A recovered retry is treated as a normal measurement
+        and does not create a runtime event.
+
         Returns
         -------
         dict
@@ -204,12 +214,19 @@ class DAQ:
                 continue
 
             try:
-                record[column] = sensor.read()
+                record[column] = self._read_with_retries(sensor)
 
             except Exception as error:
                 record[column] = None
                 state["failed"] = True
                 state["last_retry"] = monotonic()
+
+                # Close the failed connection once. Reconnection is then
+                # attempted at the normal one-minute interval.
+                try:
+                    sensor.disconnect()
+                except Exception:
+                    pass
 
                 self._add_runtime_event(
                     "Sensor communication failed",
@@ -229,6 +246,40 @@ class DAQ:
             self.logger.write(record)
 
         return record
+
+    def _read_with_retries(self, sensor):
+        """
+        Read one sensor, tolerating short communication glitches.
+
+        Returns
+        -------
+        float
+            First valid value returned by the driver.
+
+        Raises
+        ------
+        RuntimeError
+            If every read attempt fails.
+        """
+
+        last_error = None
+
+        for attempt in range(1, self.read_attempts + 1):
+            try:
+                return sensor.read()
+
+            except Exception as error:
+                last_error = error
+
+                if attempt < self.read_attempts:
+                    sleep(self.read_retry_delay)
+
+        raise RuntimeError(
+            f"{sensor.NAME} failed after "
+            f"{self.read_attempts} read attempts. "
+            f"Last error: {last_error}"
+        ) from last_error
+
     # ---------------------------------------------------------
     # Runtime sensor recovery
     # ---------------------------------------------------------
@@ -257,12 +308,18 @@ class DAQ:
                 pass
 
             sensor.connect()
-            value = sensor.read()
+            value = self._read_with_retries(sensor)
 
         except Exception:
+            try:
+                sensor.disconnect()
+            except Exception:
+                pass
+
             return None
 
         state["failed"] = False
+        state["last_retry"] = 0.0
 
         self._add_runtime_event(
             "Sensor communication restored",
@@ -291,4 +348,3 @@ class DAQ:
         events = self.runtime_events.copy()
         self.runtime_events.clear()
         return events
-

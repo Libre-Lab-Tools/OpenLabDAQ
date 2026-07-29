@@ -41,7 +41,7 @@ sensor.disconnect()
 def __init__(self, port):
 ```
 
-The constructor stores settings only. It should not open the instrument connection.
+The constructor stores settings only. It must not open the instrument connection.
 
 ### `connect()`
 
@@ -49,7 +49,7 @@ Opens communication and verifies that the expected instrument responds.
 
 Verification depends on the instrument:
 
-- Arduino: request a programmed identity
+- Arduino: request the programmed identity
 - Addressed RS-485 device: verify the expected address responds
 - Instrument with serial-number query: optionally verify the serial number
 - Other instruments: validate a protocol-specific response
@@ -60,7 +60,7 @@ Repeated calls may safely return when already connected.
 
 ### `read()`
 
-Returns one measurement already converted to engineering units.
+Performs one communication transaction and returns one fresh measurement already converted to engineering units.
 
 ```python
 return 523.0
@@ -70,9 +70,12 @@ return 523.0
 
 - Require an existing connection
 - Never reconnect automatically
+- Perform only one driver-level transaction
 - Validate the response
 - Return a numerical value
-- Raise a descriptive exception on failure
+- Raise `RuntimeError` on every operational failure
+
+The driver must not retry a failed read. OpenLabDAQ performs short read retries centrally so every instrument receives the same behavior.
 
 ### `disconnect()`
 
@@ -95,10 +98,10 @@ A driver shall:
 
 - Connect to one physical instrument
 - Verify communication
-- Read one measurement
+- Read one fresh measurement
 - Convert the value to engineering units
 - Validate framing, checksum, CRC, address, and response format when applicable
-- Raise clear errors
+- Translate library, serial, decoding, protocol, and instrument errors into descriptive `RuntimeError` exceptions
 
 A driver shall not:
 
@@ -107,21 +110,60 @@ A driver shall not:
 - Plot data
 - Read `config.json`
 - Access History, Logger, or the GUI
+- Retry failed reads
 - Automatically reopen a disconnected port
+- Return the previous measurement after a failed read
+- Return `None` for communication failures
 - Print routine status messages during GUI operation
 
-## Error Handling
+## Error Contract
 
-Return a valid numerical value or raise an exception. Do not return `None` for communication failures.
+The complete public result of `read()` is:
+
+```text
+valid number
+or
+RuntimeError
+```
+
+Examples of failures that should become `RuntimeError`:
+
+- Port closed or unavailable
+- Serial timeout
+- No response
+- Non-ASCII response when ASCII is required
+- Invalid number
+- Incomplete frame
+- Wrong address
+- CRC or checksum mismatch
+- Instrument-reported error
 
 Example:
 
 ```python
-if self.serial is None or not self.serial.is_open:
-    raise RuntimeError(f"{self.NAME} is not connected.")
+try:
+    raw_response = self.serial.readline()
+except serial.SerialException as error:
+    raise RuntimeError(
+        f"{self.NAME} serial communication failed: {error}"
+    ) from error
 ```
 
 When opening fails, close any partially opened connection before raising the final error.
+
+## DAQ Error Handling
+
+The driver does not decide whether a failure is temporary or persistent.
+
+OpenLabDAQ currently:
+
+1. Calls `read()`.
+2. Retries short failures up to three total attempts.
+3. Treats a recovered retry as a normal measurement without creating an event.
+4. Records `None` and creates one communication-failure event if all attempts fail.
+5. Continues acquiring other sensors.
+6. Attempts to reconnect the failed sensor approximately once per minute.
+7. Creates one recovery event after communication is restored.
 
 ## Optional Methods
 
@@ -151,6 +193,6 @@ The expected lifecycle is:
 2. Connect.
 3. Read a valid value.
 4. Disconnect.
-5. Confirm that another `read()` fails.
+5. Confirm that another `read()` raises `RuntimeError`.
 
-A driver that reconnects inside `read()` does not comply with the OpenLabDAQ interface.
+A driver that retries, reconnects, returns `None`, or substitutes an older value inside `read()` does not comply with the OpenLabDAQ interface.
