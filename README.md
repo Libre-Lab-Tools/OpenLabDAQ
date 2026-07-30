@@ -1,13 +1,14 @@
-# OpenLabDAQ Communication Reliability Update
+# OpenLabDAQ Pause and Named Logging Update
 
-Copy each file to the matching location in the OpenLabDAQ repository.
+Replace the matching files in the OpenLabDAQ repository.
 
-Included changes:
+## Changes
 
-- `daq.py`: three total read attempts before a sensor is marked failed; recovered glitches create no event; failed sensors reconnect every 60 seconds.
-- `sensors/BusyBee.py`: standardized value-or-`RuntimeError` driver behavior.
-- `sensors/FurnaceTC.py`: standardized value-or-`RuntimeError` behavior and preserved floating-point temperature.
-- Arduino firmware: each `READ?` performs one fresh measurement and returns a value or `ERROR`; no last-value or multi-failure state.
-- Updated driver guide.
-- New firmware guide.
-- Updated GUI help for immediate retries, Recent Events, blank values, and one-minute reconnection.
+- Optional experiment name is appended to timestamped CSV and logbook filenames.
+- Blank experiment names preserve timestamp-only automatic naming.
+- Logging can be stopped and restarted to create separate files while acquisition continues.
+- Automatic `Data logging started` and `Data logging stopped` events are added to Recent Events and the active logbook.
+- A `Pause Plots` / `Resume Plots` button freezes only plot redraws. Acquisition, History, logging, live values, and events continue.
+- The pause button is blue during live updates and amber while plots are paused.
+
+`logbook.py` does not require a change because it already derives its filename from the CSV path.

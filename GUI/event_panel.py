@@ -6,7 +6,7 @@ session.
 
 Operation
 ---------
-- Shows automatic sensor failure and recovery events.
+- Shows automatic logging, sensor failure, and recovery events.
 - Shows manually entered events after they are added to the logbook.
 - Works even when CSV logging is not active.
 - Keeps only the most recent events to prevent unlimited GUI growth.
@@ -63,8 +63,8 @@ class EventPanel(QWidget):
         # with the vertical scroll bar.
         self.scroll_area.setFixedHeight(110)
         self.scroll_area.setToolTip(
-            "Shows recent sensor communication events and manually added "
-            "events from the current acquisition session."
+            "Shows recent logging, sensor communication, and manually "
+            "added events from the current acquisition session."
         )
 
         self.event_container = QWidget()

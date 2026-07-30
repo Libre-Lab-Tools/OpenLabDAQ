@@ -11,9 +11,10 @@ Operation
 - RUN connects the DAQ and starts continuous acquisition.
 - STOP disconnects the DAQ.
 - LOAD asks for optional run information and starts CSV logging.
+- An optional experiment name is appended to the timestamped filenames.
 - LOGGING stops CSV logging and closes the matching logbook.
 - ADD EVENT captures the event time when the dialog first opens.
-- Automatic sensor failure and recovery events remain visible in Recent Events
+- Automatic logging, sensor failure, and recovery events remain visible in Recent Events
   even when CSV logging is not active.
 - All displayed measurements are read only from History.
 - Sensor nicknames and plot scales affect only the GUI.
@@ -79,7 +80,8 @@ class RunInformationDialog(QDialog):
 
         introduction = QLabel(
             "Enter optional information for this logging session. "
-            "A matching logbook file will be created beside the CSV file."
+            "If an experiment name is provided, it will be appended "
+            "to the timestamp in both saved filenames."
         )
         introduction.setWordWrap(True)
 
@@ -88,6 +90,10 @@ class RunInformationDialog(QDialog):
         self.experiment_edit = QLineEdit()
         self.experiment_edit.setPlaceholderText(
             "Example: Heating mystery powder"
+        )
+        self.experiment_edit.setToolTip(
+            "Optional. This name is appended to the timestamped "
+            "CSV and logbook filenames."
         )
 
         self.sample_edit = QLineEdit()
@@ -112,7 +118,7 @@ class RunInformationDialog(QDialog):
         self.notes_edit.setMinimumHeight(120)
 
         form_layout.addRow(
-            "Experiment:",
+            "Experiment name:",
             self.experiment_edit,
         )
         form_layout.addRow(
@@ -915,7 +921,14 @@ class MainWindow(QMainWindow):
         )
 
         try:
-            self.daq.start_logging()
+            self.daq.start_logging(
+                experiment_name=(
+                    self.pending_run_information.get(
+                        "experiment",
+                        "",
+                    )
+                )
+            )
 
         except Exception as error:
             self.pending_run_information = None
@@ -1048,6 +1061,10 @@ class MainWindow(QMainWindow):
         if self.daq is not None:
             try:
                 self.daq.stop_logging()
+
+                # The DAQ creates the automatic stop event. Process it
+                # before closing the logbook so it is saved permanently.
+                self.record_daq_events()
 
             except Exception as error:
                 errors.append(

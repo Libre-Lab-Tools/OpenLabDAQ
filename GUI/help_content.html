@@ -149,11 +149,11 @@
 
     <p>
         The <strong>Recent Events</strong> panel shows the newest events from
-        the current acquisition session, including persistent sensor communication
-        failures and recoveries. A single failed read that succeeds during an
-        immediate retry is treated as a recovered glitch and is not added to
-        Recent Events. The panel remains available whether or not CSV logging is
-        active.
+        the current acquisition session, including data-logging starts and stops,
+        persistent sensor communication failures, and recoveries. A single failed
+        read that succeeds during an immediate retry is treated as a recovered
+        glitch and is not added to Recent Events. The panel remains available
+        whether or not CSV logging is active.
     </p>
 
     <p>
@@ -173,6 +173,13 @@
         <li>Scroll to view additional plots.</li>
         <li>The vertical plot range adjusts automatically to visible data.</li>
         <li>
+            Click <span class="button-name">Pause Plots</span> to freeze only
+            the plots while acquisition, logging, live sensor values, and events
+            continue normally. While paused, use the mouse wheel to zoom and drag
+            to inspect the plots. Click <strong>Resume Plots</strong> to return
+            immediately to the newest live data.
+        </li>
+        <li>
             Click <span class="button-name">Export Data</span> to save all
             sensors in the currently displayed time range to a CSV file.
         </li>
@@ -189,8 +196,9 @@
         <li>Start acquisition.</li>
         <li>Click <span class="button-name">LOAD</span>.</li>
         <li>
-            Enter optional run information such as experiment, sample, gas,
-            operator, and general notes.
+            Enter optional run information such as experiment name, sample, gas,
+            operator, and general notes. When provided, the experiment name is
+            appended to the timestamp in both saved filenames.
         </li>
         <li>Click <span class="button-name">Start Logging</span>.</li>
     </ol>
@@ -199,12 +207,19 @@
         OpenLabDAQ creates two matching files in the configured saving directory:
     </p>
 
-    <pre>2026-07-17_12-58-00.csv
-2026-07-17_12-58-00_logbook.txt</pre>
+    <pre>2026-07-17_12-58-00_Tholin_heating.csv
+2026-07-17_12-58-00_Tholin_heating_logbook.txt</pre>
+
+    <p>
+        If the experiment name is blank, OpenLabDAQ keeps the original
+        timestamp-only filenames. Spaces and unsupported filename characters
+        are converted automatically into safe filename text.
+    </p>
 
     <p>
         The CSV contains sensor measurements. The logbook contains run
-        information and timestamped events.
+        information and timestamped events. Starting and stopping logging are
+        also added automatically to Recent Events and the active logbook.
     </p>
 
     <h3>7. Add a Manual Event</h3>
@@ -237,7 +252,8 @@
 
     <p>
         Click <span class="button-name">LOGGING</span> to stop saving data and
-        close the logbook.
+        close the logbook. A <strong>Data logging stopped</strong> event is added
+        immediately before the logbook closes.
     </p>
 
     <p>

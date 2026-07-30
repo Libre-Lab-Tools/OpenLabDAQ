@@ -11,7 +11,7 @@ Responsibilities
 - Acquire measurements.
 - Retry short read glitches before declaring a sensor failure.
 - Add acquisition records to History.
-- Start and stop CSV logging.
+- Start and stop independent CSV logging sessions.
 """
 
 from datetime import datetime
@@ -49,6 +49,10 @@ class DAQ:
         self.logging = True
 
         self.first_record = True
+
+        # Optional name appended to the next timestamped CSV filename.
+        # Automatic mode leaves this blank and keeps timestamp-only naming.
+        self.logging_experiment_name = ""
 
         # Runtime sensor failures are isolated after startup.
         # Startup connection errors still abort DAQ startup in connect().
@@ -156,25 +160,56 @@ class DAQ:
                 f"Disconnected: {sensor.NAME}"
             )
 
-        self.logger.close()
+        if self.logging or self.logger.file is not None:
+            self.stop_logging()
+        else:
+            self.logger.close()
 
     # ---------------------------------------------------------
     # Logging control
     # ---------------------------------------------------------
 
-    def start_logging(self):
+    def start_logging(self, experiment_name=None):
         """
-        Enable CSV logging.
+        Begin a new CSV logging session.
+
+        Parameters
+        ----------
+        experiment_name : str or None
+            Optional name appended to the timestamped CSV filename. A blank
+            name preserves automatic timestamp-only naming.
         """
 
+        if self.logger.file is not None:
+            raise RuntimeError(
+                "A CSV logging session is already active."
+            )
+
+        self.logging_experiment_name = str(
+            experiment_name or ""
+        ).strip()
+
+        self.first_record = True
         self.logging = True
 
     def stop_logging(self):
         """
-        Disable CSV logging.
+        End the active CSV logging session.
         """
 
+        active_file_path = self.logger.file_path
+        had_open_file = self.logger.file is not None
+
         self.logging = False
+        self.logger.close()
+        self.first_record = True
+        self.logging_experiment_name = ""
+
+        if had_open_file and active_file_path is not None:
+            self._add_runtime_event(
+                "Data logging stopped",
+                f"CSV file: {active_file_path.name}",
+            )
 
     # ---------------------------------------------------------
     # Acquisition
@@ -237,13 +272,27 @@ class DAQ:
 
         if self.logging:
 
+            started_new_file = False
+
             if self.first_record:
 
-                self.logger.new_file(record)
+                self.logger.new_file(
+                    record,
+                    experiment_name=(
+                        self.logging_experiment_name
+                    ),
+                )
 
                 self.first_record = False
+                started_new_file = True
 
             self.logger.write(record)
+
+            if started_new_file:
+                self._add_runtime_event(
+                    "Data logging started",
+                    f"CSV file: {self.logger.file_path.name}",
+                )
 
         return record
 

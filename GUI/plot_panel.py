@@ -14,6 +14,7 @@ Operation
 - Allows plots to be pinned to the top of the scrollable panel.
 - Uses optional sensor nicknames only for plot titles.
 - Exports all records in the currently displayed history window to CSV.
+- Can pause plot updates without stopping acquisition, logging, or History.
 """
 
 import csv
@@ -272,6 +273,10 @@ class PlotPanel(QWidget):
         # selector refreshes the plots immediately.
         self.history = None
 
+        # Pausing affects only plot redraws. Acquisition, History, logging,
+        # sensor values, and events continue normally.
+        self.plots_paused = False
+
         main_layout = QVBoxLayout(self)
 
         self.create_history_controls(main_layout)
@@ -399,9 +404,24 @@ class PlotPanel(QWidget):
             self.export_displayed_data
         )
 
+        self.pause_button = QPushButton(
+            "Pause Plots"
+        )
+        self.pause_button.setMinimumHeight(36)
+        self.pause_button.setStyleSheet(
+            self.pause_live_style()
+        )
+        self.pause_button.setToolTip(
+            "Freeze the plots while acquisition and logging continue."
+        )
+        self.pause_button.clicked.connect(
+            self.toggle_plot_pause
+        )
+
         controls_layout.addWidget(history_label)
         controls_layout.addWidget(self.window_selector)
         controls_layout.addWidget(self.export_button)
+        controls_layout.addWidget(self.pause_button)
         controls_layout.addStretch()
 
         main_layout.addLayout(controls_layout)
@@ -458,6 +478,70 @@ class PlotPanel(QWidget):
             self.update_from_history(
                 self.history
             )
+
+    # ---------------------------------------------------------
+    # Plot pause control
+    # ---------------------------------------------------------
+
+    def toggle_plot_pause(self):
+        """
+        Pause or resume plot redraws without affecting acquisition.
+        """
+
+        self.plots_paused = not self.plots_paused
+
+        if self.plots_paused:
+            self.pause_button.setText(
+                "Resume Plots"
+            )
+            self.pause_button.setStyleSheet(
+                self.pause_paused_style()
+            )
+            self.pause_button.setToolTip(
+                "Plots are frozen. Click to return to live updates."
+            )
+            return
+
+        self.pause_button.setText(
+            "Pause Plots"
+        )
+        self.pause_button.setStyleSheet(
+            self.pause_live_style()
+        )
+        self.pause_button.setToolTip(
+            "Freeze the plots while acquisition and logging continue."
+        )
+
+        # Immediately catch up to the newest History data and restore the
+        # normal live time and y ranges.
+        if self.history is not None:
+            self.update_from_history(
+                self.history
+            )
+
+    @staticmethod
+    def pause_live_style():
+        """Return the normal style for live plot updates."""
+
+        return """
+            font-size: 16px;
+            padding: 5px 12px;
+            background-color: #4f6d9a;
+            color: white;
+            font-weight: bold;
+        """
+
+    @staticmethod
+    def pause_paused_style():
+        """Return the amber style indicating that plots are paused."""
+
+        return """
+            font-size: 16px;
+            padding: 5px 12px;
+            background-color: #d98c2b;
+            color: white;
+            font-weight: bold;
+        """
 
     # ---------------------------------------------------------
     # Data export
@@ -605,6 +689,9 @@ class PlotPanel(QWidget):
         """
 
         self.history = history
+
+        if self.plots_paused:
+            return
 
         records = history.get_records()
 
